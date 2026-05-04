@@ -142,8 +142,8 @@ export default function PlayerSetupPage({
             <label className="block text-sm font-medium text-slate-300 mb-2 uppercase tracking-wider">
               ⚡ Difficulty
             </label>
-            <div className="grid grid-cols-3 gap-2">
-              {['easy', 'mixed', 'hard'].map((level) => (
+            <div className="grid grid-cols-2 gap-2">
+              {['easy', 'mixed', 'hard', 'extreme'].map((level) => (
                 <button
                   key={level}
                   onClick={() => setDifficulty(level)}
@@ -156,10 +156,15 @@ export default function PlayerSetupPage({
                   `}
                   id={`difficulty-${level}`}
                 >
-                  {level === 'easy' ? '🟢' : level === 'mixed' ? '🟡' : '🔴'} {level}
+                  {level === 'easy' ? '🟢' : level === 'mixed' ? '🟡' : level === 'hard' ? '🔴' : '🔥'} {level}
                 </button>
               ))}
             </div>
+            {difficulty === 'extreme' && (
+              <p className="text-amber-400 text-xs mt-2 animate-pulse">
+                ⚡ Includes gestures, motion tracking & multi-object challenges!
+              </p>
+            )}
           </div>
 
           {/* Rounds Selection */}

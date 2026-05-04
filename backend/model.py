@@ -1,16 +1,28 @@
 """
 YOLOv8 Model Loader and Inference Engine
 Handles object detection and color recognition.
+
+V2 FEATURES: Motion tracking, gesture detection, multi-object analysis
 """
 
 import cv2
 import numpy as np
 from ultralytics import YOLO
 
+# ===== V2 IMPORTS =====
+from motion_tracker import MotionDetector, ObjectTracker
+from gesture_detector import GestureDetector
+from multi_object import analyze_scene
+
 # ---------------------------------------------------------------------------
 # Singleton model instance
 # ---------------------------------------------------------------------------
 _model = None
+
+# ===== V2: Singleton instances for motion, tracking, and gestures =====
+_motion_detector = None
+_object_tracker = None
+_gesture_detector = None
 
 
 def get_model():
@@ -19,6 +31,31 @@ def get_model():
     if _model is None:
         _model = YOLO("yolov8n.pt")  # downloads automatically on first run
     return _model
+
+
+# ===== V2: Get singleton instances =====
+def get_motion_detector():
+    """Get or create MotionDetector singleton."""
+    global _motion_detector
+    if _motion_detector is None:
+        _motion_detector = MotionDetector()
+    return _motion_detector
+
+
+def get_object_tracker():
+    """Get or create ObjectTracker singleton."""
+    global _object_tracker
+    if _object_tracker is None:
+        _object_tracker = ObjectTracker()
+    return _object_tracker
+
+
+def get_gesture_detector():
+    """Get or create GestureDetector singleton."""
+    global _gesture_detector
+    if _gesture_detector is None:
+        _gesture_detector = GestureDetector()
+    return _gesture_detector
 
 
 # ---------------------------------------------------------------------------

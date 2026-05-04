@@ -4,3 +4,7 @@ python-multipart==0.0.9
 ultralytics==8.2.100
 opencv-python-headless==4.10.0.84
 numpy==1.26.4
+
+# ===== V2 FEATURES: Motion, Gestures, Multi-Object =====
+mediapipe==0.10.14
+scipy==1.11.4

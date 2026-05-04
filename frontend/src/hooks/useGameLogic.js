@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
-import { getRandomPrompt, checkMatch, getColorFromPrompt } from '../utils/prompts';
-import { detectObjects } from '../utils/api';
+import { getRandomPrompt, checkMatch, checkMatchV2, getColorFromPrompt } from '../utils/prompts';
+import { detectObjects, resetTrackers } from '../utils/api';
 import { playSuccess, playFailure } from '../utils/sounds';
 
 /**
@@ -36,7 +36,10 @@ export function useGameLogic(players, difficulty, rounds) {
   /**
    * Start a new turn for the current player.
    */
-  const startTurn = useCallback(() => {
+  const startTurn = useCallback(async () => {
+    // ===== V2: Reset trackers at start of each turn =====
+    await resetTrackers();
+    
     const prompt = getRandomPrompt(difficulty, usedPrompts);
     setCurrentPrompt(prompt);
     setUsedPrompts(prev => [...prev, prompt.text]);
@@ -48,17 +51,38 @@ export function useGameLogic(players, difficulty, rounds) {
 
   /**
    * Process a captured frame — send to backend and check for match.
-   * Returns the detections array.
+   * Returns the full detection result (V2: includes gesture, motion, multi-object data).
    */
   const processFrame = useCallback(async (base64Frame) => {
-    if (!turnActive || matchFoundRef.current || !currentPrompt) return [];
+    if (!turnActive || matchFoundRef.current || !currentPrompt) return { detections: [] };
 
     const colorName = getColorFromPrompt(currentPrompt);
-    const results = await detectObjects(base64Frame, colorName);
-    setDetections(results);
+    
+    // ===== V2: Pass prompt to enable appropriate features =====
+    const result = await detectObjects(base64Frame, colorName, currentPrompt);
+    
+    // Extract detections for display
+    const detectionsList = result.detections || [];
+    
+    // ===== DEBUG: Log what we received =====
+    if (currentPrompt.type === 'motion' || currentPrompt.type === 'gesture') {
+      console.log(`📦 Prompt: "${currentPrompt.text}" (type: ${currentPrompt.type})`);
+      console.log(`📦 Received ${detectionsList.length} detections:`, detectionsList);
+      console.log(`📦 Full result:`, result);
+    }
+    
+    setDetections(detectionsList);
 
-    // Check for match
-    if (checkMatch(currentPrompt, results)) {
+    // ===== V2: Use enhanced matching for V2 prompts =====
+    let isMatch = false;
+    if (currentPrompt.type === 'gesture' || currentPrompt.type === 'motion' || currentPrompt.type === 'multi_object') {
+      isMatch = checkMatchV2(currentPrompt, result);
+    } else {
+      // Original matching for object/color prompts
+      isMatch = checkMatch(currentPrompt, detectionsList);
+    }
+
+    if (isMatch) {
       matchFoundRef.current = true;
       setTurnActive(false);
       setTurnResult('success');
@@ -71,7 +95,7 @@ export function useGameLogic(players, difficulty, rounds) {
       }));
     }
 
-    return results;
+    return result;
   }, [turnActive, currentPrompt, currentPlayerIndex, players]);
 
   /**
