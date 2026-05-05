@@ -7,6 +7,7 @@ V2 FEATURES: Motion tracking, gesture detection, multi-object analysis
 import base64
 from fastapi import APIRouter, UploadFile, File, Form
 from typing import Optional
+from utils.to_python_type import to_python_type
 
 from model import (
     detect_objects, 
@@ -104,7 +105,7 @@ async def detect(
         scene_analysis = analyze_scene(all_detections)
         response["multi_object_analysis"] = scene_analysis
 
-    return response
+    return to_python_type(response)
 
 
 # ===== V2: Reset endpoint for motion detector and tracker =====

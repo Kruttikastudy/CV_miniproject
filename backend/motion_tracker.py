@@ -16,70 +16,61 @@ from ultralytics import YOLO
 # ---------------------------------------------------------------------------
 
 class MotionDetector:
-    """Detects motion between consecutive frames."""
-    
-    def __init__(self, threshold: int = 25, min_area: int = 500):
-        self.threshold = threshold
+    def __init__(self, min_area: int = 500):
         self.min_area = min_area
-        self.prev_frame = None
-    
+        self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
+            history=500,
+            varThreshold=50,
+            detectShadows=True
+        )
+
     def detect_motion(self, frame: np.ndarray) -> Dict:
-        """
-        Detect motion in the current frame compared to previous frame.
-        
-        Returns:
-            {
-                "motion_detected": bool,
-                "motion_percentage": float,  # 0-100
-                "motion_regions": List[bbox],  # [x, y, w, h]
-            }
-        """
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        gray = cv2.GaussianBlur(gray, (21, 21), 0)
-        
-        if self.prev_frame is None:
-            self.prev_frame = gray
+        frame = cv2.GaussianBlur(frame, (5, 5), 0)
+
+        fg_mask = self.bg_subtractor.apply(frame)
+
+        kernel = np.ones((5, 5), np.uint8)
+        fg_mask = cv2.morphologyEx(fg_mask, cv2.MORPH_OPEN, kernel)
+        fg_mask = cv2.dilate(fg_mask, None, iterations=2)
+
+        contours, _ = cv2.findContours(
+            fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+        )
+
+        motion_regions = []
+
+        for contour in contours:
+            area = cv2.contourArea(contour)
+
+            if area < self.min_area or area > frame.shape[0]*frame.shape[1]*0.5:
+                continue
+
+            x, y, w, h = cv2.boundingRect(contour)
+            motion_regions.append([int(x), int(y), int(w), int(h)])
+
+        motion_pixels = cv2.countNonZero(fg_mask)
+        motion_percentage = (motion_pixels / (frame.shape[0]*frame.shape[1])) * 100
+
+        if motion_percentage > 80:
             return {
                 "motion_detected": False,
                 "motion_percentage": 0.0,
                 "motion_regions": []
             }
-        
-        # Compute absolute difference
-        frame_delta = cv2.absdiff(self.prev_frame, gray)
-        thresh = cv2.threshold(frame_delta, self.threshold, 255, cv2.THRESH_BINARY)[1]
-        thresh = cv2.dilate(thresh, None, iterations=2)
-        
-        # Find contours
-        contours, _ = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        
-        motion_regions = []
-        total_motion_area = 0
-        
-        for contour in contours:
-            area = cv2.contourArea(contour)
-            if area < self.min_area:
-                continue
-            
-            x, y, w, h = cv2.boundingRect(contour)
-            motion_regions.append([x, y, w, h])
-            total_motion_area += area
-        
-        # Calculate motion percentage
-        frame_area = frame.shape[0] * frame.shape[1]
-        motion_percentage = (total_motion_area / frame_area) * 100
-        
-        self.prev_frame = gray
-        
+
         return {
-            "motion_detected": len(motion_regions) > 0,
-            "motion_percentage": round(motion_percentage, 2),
+            "motion_detected": bool(len(motion_regions) > 0),
+            "motion_percentage": float(round(motion_percentage, 2)),
             "motion_regions": motion_regions
         }
-    
+
     def reset(self):
-        """Reset the motion detector state."""
-        self.prev_frame = None
+        """Reset background model."""
+        self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
+            history=500,
+            varThreshold=50,
+            detectShadows=True
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +116,11 @@ class ObjectTracker:
     def _update_with_yolo_tracking(self, frame: np.ndarray) -> Dict:
         """Use YOLO's built-in tracking on the frame."""
         # Run YOLO tracking (persist=True maintains track IDs across frames)
-        results = self.model.track(frame, persist=True, verbose=False, conf=0.5)
+        try:
+            results = self.model.track(frame, persist=True, verbose=False, conf=0.5)
+        except Exception as e:
+            print("Tracking error:", e)
+            return {"tracked_objects": {}, "movements": []}
         
         if len(results) == 0 or results[0].boxes is None:
             return {"tracked_objects": {}, "movements": []}
@@ -218,7 +213,7 @@ class ObjectTracker:
             # Calculate displacement
             dx = end[0] - start[0]
             dy = end[1] - start[1]
-            distance = np.sqrt(dx**2 + dy**2)
+            distance = float(np.sqrt(dx**2 + dy**2))
             
             # Determine direction
             direction = "stationary"
@@ -240,7 +235,7 @@ class ObjectTracker:
                 p2 = trajectory_list[i]
                 total_distance += np.sqrt((p2[0]-p1[0])**2 + (p2[1]-p1[1])**2)
             
-            avg_speed = total_distance / len(trajectory_list) if len(trajectory_list) > 1 else 0
+            avg_speed = float(total_distance / len(trajectory_list)) if len(trajectory_list) > 1 else 0.0
             
             label = self.object_labels.get(track_id, "unknown")
             
@@ -259,8 +254,14 @@ class ObjectTracker:
         """Reset the tracker state."""
         self.trajectories = {}
         self.object_labels = {}
-        # Reset YOLO tracker
+        # Reset YOLO tracker    
         self.model.predictor = None
+        """Reset background model."""
+        self.bg_subtractor = cv2.createBackgroundSubtractorMOG2(
+            history=500,
+            varThreshold=50,
+            detectShadows=True
+        )
 
 
 # ---------------------------------------------------------------------------
