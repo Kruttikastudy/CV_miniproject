@@ -159,9 +159,12 @@ def check_match_v2(prompt: dict, detection_result: dict) -> bool:
             return any(m.get("is_moving", False) for m in movements)
         
         elif target == "leftright":
-            # Check if specific object moved left to right
+            # Check if bottle moved left to right
             from motion_tracker import detect_object_movement_leftright
-            return detect_object_movement_leftright(movements)
+
+            tracked_objects = tracking_data.get("tracked_objects", {})
+
+            return detect_object_movement_leftright(tracked_objects)
     
     # ===== V2: Gesture prompts =====
     elif prompt_type == "gesture":
@@ -192,22 +195,30 @@ def check_match_v2(prompt: dict, detection_result: dict) -> bool:
             return check_objects_proximity(detections, prompt["object1"], prompt["object2"])
         
         elif target == "size_compare":
-            # Check if any object is bigger than reference
-            from multi_object import find_largest_object, calculate_bbox_area
+            # Check if something is bigger than reference (phone)
+            from multi_object import calculate_bbox_area
             reference_label = prompt["reference"].lower()
             
-            # Find reference object
+            # Find reference object (phone - should be the smaller object)
             ref_obj = next((d for d in detections if d["label"].lower() == reference_label), None)
             if not ref_obj:
                 return False
             
             ref_area = calculate_bbox_area(ref_obj["bbox"])
             
-            # Check if any other object is bigger
-            for det in detections:
-                if det["label"].lower() != reference_label:
-                    if calculate_bbox_area(det["bbox"]) > ref_area:
-                        return True
+            # Find objects that are neither a person nor the reference object (phone)
+            other_objects = [d for d in detections 
+                            if d["label"].lower() != "person" 
+                            and d["label"].lower() != reference_label]
+            if not other_objects:
+                return False
+            
+            largest_obj = max(other_objects, key=lambda d: calculate_bbox_area(d["bbox"]))
+            largest_area = calculate_bbox_area(largest_obj["bbox"])
+            
+            # Ensure the largest object is bigger than the phone (reference)
+            if largest_area > ref_area:
+                return True
             return False
     
     return False

@@ -82,13 +82,13 @@ export function useGameLogic(players, difficulty, rounds) {
       isMatch = checkMatch(currentPrompt, detectionsList);
     }
 
-    if (isMatch) {
+    if (isMatch && !matchFoundRef.current) {
       matchFoundRef.current = true;
+
       setTurnActive(false);
       setTurnResult('success');
       playSuccess();
 
-      // Award point
       setScores(prev => ({
         ...prev,
         [players[currentPlayerIndex]]: (prev[players[currentPlayerIndex]] || 0) + 1,

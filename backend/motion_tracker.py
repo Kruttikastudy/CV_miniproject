@@ -117,7 +117,14 @@ class ObjectTracker:
         """Use YOLO's built-in tracking on the frame."""
         # Run YOLO tracking (persist=True maintains track IDs across frames)
         try:
-            results = self.model.track(frame, persist=True, verbose=False, conf=0.5)
+            results = self.model.track(
+            frame,
+            persist=True,
+            tracker="botsort.yaml",
+            conf=0.3,
+            iou=0.5,
+            verbose=False
+           )
         except Exception as e:
             print("Tracking error:", e)
             return {"tracked_objects": {}, "movements": []}
@@ -217,7 +224,7 @@ class ObjectTracker:
             
             # Determine direction
             direction = "stationary"
-            if distance > 50:  # Minimum movement threshold
+            if distance > 15:  # Minimum movement threshold
                 angle = np.arctan2(dy, dx) * 180 / np.pi
                 if -45 <= angle < 45:
                     direction = "right"
@@ -245,7 +252,7 @@ class ObjectTracker:
                 "direction": direction,
                 "distance": round(distance, 2),
                 "speed": round(avg_speed, 2),
-                "is_moving": distance > 50
+                "is_moving": distance > 15
             })
         
         return movements
@@ -316,18 +323,53 @@ def detect_directional_movement(movements: List[Dict], target_direction: str) ->
     return False
 
 
-def detect_object_movement_leftright(movements: List[Dict], min_distance: float = 100) -> bool:
+def detect_object_movement_leftright(
+    tracked_objects: Dict,
+    min_horizontal_distance: float = 60,
+    min_trajectory_points: int = 8,
+    consistency_threshold: float = 0.6,
+    smoothing_window: int = 3
+) -> bool:
     """
-    Detect if an object has moved significantly from left to right.
-    
-    Args:
-        movements: List of movement dicts from ObjectTracker
-        min_distance: Minimum horizontal distance to consider as "left to right"
-    
-    Returns:
-        True if left-to-right movement detected
+    Detect bottle movement from left to right with noise filtering
+    and directional consistency checks.
     """
-    for movement in movements:
-        if movement["direction"] == "right" and movement["distance"] >= min_distance:
+    for track_id, obj in tracked_objects.items():
+        if obj["label"] != "bottle":
+            continue
+
+        trajectory = obj["trajectory"]
+        n = len(trajectory)
+
+        # Adapt thresholds based on available history (handles cold-start)
+        effective_min_points = min(min_trajectory_points, max(3, n))
+        effective_consistency = consistency_threshold if n >= min_trajectory_points else 0.5
+        effective_min_distance = min_horizontal_distance if n >= min_trajectory_points else 40
+
+        if n < effective_min_points:
+            continue
+
+        # --- 1. Smooth the trajectory to reduce noise ---
+        x_coords = [pt[0] for pt in trajectory]
+        smoothed_x = []
+        for i in range(len(x_coords)):
+            window_start = max(0, i - smoothing_window + 1)
+            window = x_coords[window_start:i + 1]
+            smoothed_x.append(sum(window) / len(window))
+
+        # --- 2. Check overall displacement ---
+        total_displacement = smoothed_x[-1] - smoothed_x[0]
+        if total_displacement < effective_min_distance:
+            continue
+
+        # --- 3. Check directional consistency ---
+        rightward_steps = sum(
+            1 for i in range(1, len(smoothed_x))
+            if smoothed_x[i] > smoothed_x[i - 1]
+        )
+        consistency = rightward_steps / (len(smoothed_x) - 1)
+
+        if consistency >= effective_consistency:
             return True
+
     return False
